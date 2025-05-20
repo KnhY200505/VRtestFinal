@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AR.js + Blendshape (With Audio & Mic + Model Select)</title>
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.0/aframe/build/aframe-ar.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    .screen {
+      position: absolute;
+      width: 100vw;
+      height: 100vh;
+      background: #111;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+    .btn-container button {
+      margin: 8px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #ar-controls {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      z-index: 10;
+    }
+    #playPauseBtn {
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #back-btn {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 10;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 模型选择页 -->
+<div id="model-select-screen" class="screen">
+  <h2>📦 Select a model</h2>
+  <div class="btn-container">
+    <button onclick="selectModel('Cube_Blendshape_test.glb')">Model 1</button>
+    <button onclick="selectModel('Cube_Blendshape_test2.glb')">Model 2</button>
+    <button onclick="selectModel('Cube_Blendshape_test3.glb')">Model 3</button>
+  </div>
+</div>
+
+<!-- 音频选择页 -->
+<div id="audio-select-screen" class="screen" style="display: none;">
+  <h2>🎵 Please select the sound track</h2>
+  <div class="btn-container">
+    <button onclick="startARWithAudio('AnotherDayOfSun.MP3')">Audio 1</button>
+    <button onclick="startARWithAudio('AnotherDayOfSun2.MP3')">Audio 2</button>
+    <button onclick="startARWithAudio('AnotherDayOfSun3.MP3')">Audio 3</button>
+    <button onclick="startARWithMic()">Mic Input</button>
+  </div>
+</div>
+
+<!-- AR.js 场景 -->
+<a-scene embedded arjs vr-mode-ui="enabled: false" style="display:none" id="ar-scene">
+  <a-marker preset="hiro">
+    <a-entity id="blendshape-model"
+              position="0 0 0"
+              scale="0.5 0.5 0.5">
+    </a-entity>
+  </a-marker>
+  <a-entity camera></a-entity>
+</a-scene>
+
+<div id="ar-controls" style="display: none;">
+  <button id="playPauseBtn" onclick="togglePlayback()">Play</button>
+</div>
+<button id="back-btn" style="display: none;" onclick="goBack()">Back</button>
+
+<script>
+  let modelMesh, analyser, dataArray, audioContext, currentAudio;
+  let isPlaying = false;
+  let usingMic = false;
+  let selectedModel = "";
+
+  function selectModel(modelPath) {
+    selectedModel = modelPath;
+    document.getElementById('model-select-screen').style.display = 'none';
+    document.getElementById('audio-select-screen').style.display = 'flex';
+  }
+
+  function startARWithAudio(filename) {
+    usingMic = false;
+    showARScene();
+    initAudio(filename);
+  }
+
+  function startARWithMic() {
+    usingMic = true;
+    showARScene();
+    initMicAudio();
+  }
+
+  function showARScene() {
+    document.getElementById('audio-select-screen').style.display = 'none';
+    document.getElementById('ar-scene').style.display = 'block';
+    document.getElementById('ar-controls').style.display = 'block';
+    document.getElementById('back-btn').style.display = 'block';
+    const modelEntity = document.querySelector('#blendshape-model');
+    modelEntity.setAttribute('gltf-model', selectedModel);
+  }
+
+  async function initMicAudio() {
+    if (audioContext) await audioContext.close();
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micSource = audioContext.createMediaStreamSource(stream);
+
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 64;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      micSource.connect(analyser);
+      isPlaying = true;
+      document.getElementById('playPauseBtn').innerText = 'Pause';
+      animate();
+    } catch (err) {
+      alert('Microphone access denied or not available.');
+      goBack();
+    }
+  }
+
+  function goBack() {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+    }
+    isPlaying = false;
+    usingMic = false;
+    selectedModel = "";
+
+    document.getElementById('model-select-screen').style.display = 'flex';
+    document.getElementById('audio-select-screen').style.display = 'none';
+    document.getElementById('ar-scene').style.display = 'none';
+    document.getElementById('ar-controls').style.display = 'none';
+    document.getElementById('back-btn').style.display = 'none';
+    document.getElementById('playPauseBtn').innerText = 'Play';
+  }
+
+  function initAudio(filename) {
+    if (currentAudio) currentAudio.pause();
+    if (audioContext) audioContext.close();
+
+    currentAudio = new Audio(filename);
+    currentAudio.loop = true;
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const audioSource = audioContext.createMediaElementSource(currentAudio);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    audioSource.connect(analyser);
+    analyser.connect(audioContext.destination);
+  }
+
+  function togglePlayback() {
+    if (!analyser || !audioContext) return;
+
+    if (usingMic) {
+      isPlaying = !isPlaying;
+      document.getElementById('playPauseBtn').innerText = isPlaying ? 'Pause' : 'Play';
+      if (isPlaying) animate();
+    } else {
+      if (!currentAudio) return;
+      if (!isPlaying) {
+        currentAudio.play();
+        audioContext.resume();
+        isPlaying = true;
+        document.getElementById('playPauseBtn').innerText = 'Pause';
+        animate();
+      } else {
+        currentAudio.pause();
+        isPlaying = false;
+        document.getElementById('playPauseBtn').innerText = 'Play';
+      }
+    }
+  }
+
+  function animate() {
+    if (!analyser || !isPlaying) return;
+    requestAnimationFrame(animate);
+    analyser.getByteFrequencyData(dataArray);
+    const avgFreq = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+    const influence = Math.min(avgFreq / 100, 1);
+
+    if (modelMesh && modelMesh.morphTargetInfluences) {
+      modelMesh.morphTargetInfluences[0] = influence;
+    }
+  }
+
+  const modelEntity = document.querySelector('#blendshape-model');
+  modelEntity.addEventListener('model-loaded', () => {
+    const mesh = modelEntity.getObject3D('mesh');
+    mesh.traverse(node => {
+      if (node.isMesh && node.morphTargetInfluences) {
+        modelMesh = node;
+      }
+    });
+  });
+</script>
+</body>
+</html>
